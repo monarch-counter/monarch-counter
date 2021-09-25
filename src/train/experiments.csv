@@ -1,0 +1,16 @@
+timestamp,batch_size,epochs,learning_rate,dropout_rate,n_filters,unet_block_type,unet_skip_conn_type
+20210706-142205,4,5,0.0001,0.0,32,dilated_multires,resnet
+20210707-125627,4,5,0.0001,0.0,16,dilated_multires,resnet
+20210707-134945,6,5,0.0001,0.0,16,dilated_multires,default
+20210707-143919,6,15,0.0001,0.0,16,default,resnet
+20210707-175556,6,50,0.0001,0.0,16,default,resnet
+20210713-132459,8,2,5e-05,0.0,32,default,default
+20210713-151409,8,3,5e-05,0.0,32,default,default
+20210713-160536,8,50,0.0001,0.0,32,default,default
+20210713-202446,8,50,0.0001,0.0,24,default,default
+20210714-031825,4,50,0.0001,0.0,24,multires,default
+20210714-095418,4,50,0.0001,0.0,32,multires,default
+20210718-023252,4,50,5e-05,0.0,16,multires,resnet
+20210719-020610,4,50,0.0001,0.0,32,default,default
+20210719-104859,4,50,0.0001,0.0,16,multires,default
+20210719-162019,4,50,0.0001,0.1,16,multires,resnet
