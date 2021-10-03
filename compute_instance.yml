@@ -1,4 +1,4 @@
 $schema: https://azuremlschemas.azureedge.net/latest/compute.schema.json
-name: gpu
+name: monarch-counter-gpu
 type: computeinstance
 size: Standard_NC6

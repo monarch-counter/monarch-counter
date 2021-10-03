@@ -1,0 +1,10 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+code: 
+  local_path: ./
+command: >-
+  python src/train/run.py --dataset_dir downloads/512px --image_size 512 --azure_dataset=512px
+environment: azureml:AzureML-tensorflow-2.4-ubuntu18.04-py37-cuda11-gpu:11
+compute:
+  target: azureml:monarch-counter-gpu
+experiment_name: train-counter
+description: Train monarch counter image neural net.
