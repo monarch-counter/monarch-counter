@@ -1,0 +1,4 @@
+$schema: https://azuremlschemas.azureedge.net/latest/compute.schema.json
+name: gpu
+type: computeinstance
+size: Standard_NC6
