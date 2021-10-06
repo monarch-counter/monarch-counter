@@ -1,14 +1,14 @@
 from numpy.lib.arraypad import pad
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
-    Conv2D, 
+    Conv2D,
     Conv2DTranspose,
-    Activation, 
-    BatchNormalization, 
+    Activation,
+    BatchNormalization,
     Flatten,
-    Input, 
-    MaxPool2D, 
-    Dropout, 
+    Input,
+    MaxPool2D,
+    Dropout,
     concatenate
 )
 from tensorflow.python.keras.layers.merge import add
@@ -17,10 +17,11 @@ from tensorflow.keras.optimizers.schedules import ExponentialDecay
 from tensorflow import math as tf_math
 from tensorflow.python.keras.utils.generic_utils import default
 
+#
+# Metrics
+#
 
-#
-### Metrics 
-#
+
 def mean_percent_count_err(y_true, y_pred):
     """Function that calculates a custom accuracy metric for the UNet
 
@@ -36,14 +37,15 @@ def mean_percent_count_err(y_true, y_pred):
     y_true_counts = tf_math.reduce_sum(y_true, axis=1)
     y_pred_counts = tf_math.reduce_sum(y_pred, axis=1)
     count_delta = tf_math.abs(tf_math.subtract(y_true_counts, y_pred_counts))
-    count_delta_percent = tf_math.scalar_mul(100.0, tf_math.divide_no_nan(count_delta, y_true_counts))
-    
+    count_delta_percent = tf_math.scalar_mul(
+        100.0, tf_math.divide_no_nan(count_delta, y_true_counts))
+
     return tf_math.reduce_mean(count_delta_percent)
 
 
 #
-### MultiResUNet blocks
-#  
+# MultiResUNet blocks
+#
 def get_multires_conv_block(inputs=None, n_filters=32, dropout_prob=0.5, max_pooling=True, alpha=1.67):
     """Convolutional Downsampling block based on MultiResUNet paper
 
@@ -58,27 +60,31 @@ def get_multires_conv_block(inputs=None, n_filters=32, dropout_prob=0.5, max_poo
         x, skip_connection ([Tensor], [Tensor]): A tuple of tensors that are passed to the next layer and corresponding 
             up-sampling layer
     """
-    
+
     # A multiplyer for the original number of filters (kernels)
     W = n_filters * alpha
 
     # 1v1 for later use
     n_filters_1x1 = int(W * 0.167) + int(W * 0.333) + int(W * 0.5)
-    shortcut = Conv2D(n_filters_1x1, 1, padding='same', kernel_initializer='he_normal')(inputs)
+    shortcut = Conv2D(n_filters_1x1, 1, padding='same',
+                      kernel_initializer='he_normal')(inputs)
     shortcut = BatchNormalization()(shortcut)
-    
+
     # First 3x3 conv
-    conv3x3 = Conv2D(int(W * 0.167), 3, padding='same', kernel_initializer='he_normal')(inputs)
+    conv3x3 = Conv2D(int(W * 0.167), 3, padding='same',
+                     kernel_initializer='he_normal')(inputs)
     conv3x3 = BatchNormalization()(conv3x3)
     conv3x3 = Activation(activation='relu')(conv3x3)
 
     # Second 3x3 conv (emulating 5x5 conv)
-    conv5x5 = Conv2D(int(W * 0.333), 3, padding='same', kernel_initializer='he_normal')(conv3x3)
+    conv5x5 = Conv2D(int(W * 0.333), 3, padding='same',
+                     kernel_initializer='he_normal')(conv3x3)
     conv5x5 = BatchNormalization()(conv5x5)
     conv5x5 = Activation(activation='relu')(conv5x5)
 
     # Third 3x3 conv (emulating 7x7 conv)
-    conv7x7 = Conv2D(int(W * 0.5), 3, padding='same', kernel_initializer='he_normal')(conv5x5)
+    conv7x7 = Conv2D(int(W * 0.5), 3, padding='same',
+                     kernel_initializer='he_normal')(conv5x5)
     conv7x7 = BatchNormalization()(conv7x7)
     conv7x7 = Activation(activation='relu')(conv7x7)
 
@@ -86,10 +92,10 @@ def get_multires_conv_block(inputs=None, n_filters=32, dropout_prob=0.5, max_poo
     concat = concatenate([conv3x3, conv5x5, conv7x7], axis=3)
     concat = BatchNormalization()(concat)
 
-    # Merge the 1x1 and quasi-inception layer, and apply an activation 
+    # Merge the 1x1 and quasi-inception layer, and apply an activation
     x = add([shortcut, concat])
     x = Activation('relu')(x)
-    
+
     if dropout_prob > 0.0:
         x = Dropout(rate=dropout_prob)(x)
 
@@ -97,10 +103,11 @@ def get_multires_conv_block(inputs=None, n_filters=32, dropout_prob=0.5, max_poo
         out = MaxPool2D(pool_size=(2, 2))(x)
     else:
         out = x
-    
+
     skip_connection = x
-    
+
     return out, skip_connection
+
 
 def get_multires_deconv_block(expansive_inputs, contractive_inputs, n_filters=32, alpha=1.67):
     """Convolutional Upsampling block based on MultiResUNet paper
@@ -114,7 +121,8 @@ def get_multires_deconv_block(expansive_inputs, contractive_inputs, n_filters=32
     Returns:
         result ([Tensor]): Output tensor for the next upsampling block
     """
-    x = Conv2DTranspose(n_filters, (3, 3), strides=(2, 2), padding='same')(expansive_inputs)
+    x = Conv2DTranspose(n_filters, (3, 3), strides=(2, 2),
+                        padding='same')(expansive_inputs)
     merged = concatenate([x, contractive_inputs], axis=3)
 
     # A multiplyer for the original number of filters (kernels)
@@ -122,21 +130,25 @@ def get_multires_deconv_block(expansive_inputs, contractive_inputs, n_filters=32
 
     # 1v1 for later use
     n_filters_1x1 = int(W * 0.167) + int(W * 0.333) + int(W * 0.5)
-    shortcut = Conv2D(n_filters_1x1, 1, padding='same', kernel_initializer='he_normal')(merged)
+    shortcut = Conv2D(n_filters_1x1, 1, padding='same',
+                      kernel_initializer='he_normal')(merged)
     shortcut = BatchNormalization()(shortcut)
-    
+
     # First 3x3 conv
-    conv3x3 = Conv2D(int(W * 0.167), 3, padding='same', kernel_initializer='he_normal')(merged)
+    conv3x3 = Conv2D(int(W * 0.167), 3, padding='same',
+                     kernel_initializer='he_normal')(merged)
     conv3x3 = BatchNormalization()(conv3x3)
     conv3x3 = Activation(activation='relu')(conv3x3)
 
     # Second 3x3 conv (emulating 5x5 conv)
-    conv5x5 = Conv2D(int(W * 0.333), 3, padding='same', kernel_initializer='he_normal')(conv3x3)
+    conv5x5 = Conv2D(int(W * 0.333), 3, padding='same',
+                     kernel_initializer='he_normal')(conv3x3)
     conv5x5 = BatchNormalization()(conv5x5)
     conv5x5 = Activation(activation='relu')(conv5x5)
 
     # Third 3x3 conv (emulating 7x7 conv)
-    conv7x7 = Conv2D(int(W * 0.5), 3, padding='same', kernel_initializer='he_normal')(conv5x5)
+    conv7x7 = Conv2D(int(W * 0.5), 3, padding='same',
+                     kernel_initializer='he_normal')(conv5x5)
     conv7x7 = BatchNormalization()(conv7x7)
     conv7x7 = Activation(activation='relu')(conv7x7)
 
@@ -144,7 +156,7 @@ def get_multires_deconv_block(expansive_inputs, contractive_inputs, n_filters=32
     concat = concatenate([conv3x3, conv5x5, conv7x7], axis=3)
     concat = BatchNormalization()(concat)
 
-    # Merge the 1x1 and quasi-inception layer, and apply an activation 
+    # Merge the 1x1 and quasi-inception layer, and apply an activation
     x = add([shortcut, concat])
     x = Activation('relu')(x)
     result = BatchNormalization()(x)
@@ -152,8 +164,8 @@ def get_multires_deconv_block(expansive_inputs, contractive_inputs, n_filters=32
     return result
 
 
-# 
-### Vanilla UNet blocks
+#
+# Vanilla UNet blocks
 #
 def get_default_conv_block(inputs=None, n_filters=32, dropout_prob=0.5, max_pooling=True):
     """Convolutional downsampling block (vanilla) in UNet
@@ -168,27 +180,28 @@ def get_default_conv_block(inputs=None, n_filters=32, dropout_prob=0.5, max_pool
         result [Tensor]: Output tensor.
         skip_connection [Tensor]: Skip connection tensor.
     """
-    x = Conv2D(n_filters, 3, padding='same', 
-            kernel_initializer='he_normal')(inputs)
-    x = BatchNormalization()(x)
-    x = Activation(activation='relu')(x)
-    
     x = Conv2D(n_filters, 3, padding='same',
-            kernel_initializer='he_normal')(x)
+               kernel_initializer='he_normal')(inputs)
     x = BatchNormalization()(x)
     x = Activation(activation='relu')(x)
-    
+
+    x = Conv2D(n_filters, 3, padding='same',
+               kernel_initializer='he_normal')(x)
+    x = BatchNormalization()(x)
+    x = Activation(activation='relu')(x)
+
     if dropout_prob > 0:
         x = Dropout(dropout_prob)(x)
-    
+
     if max_pooling:
         result = MaxPool2D(pool_size=(2, 2))(x)
     else:
         result = x
-    
+
     skip_connection = x
-    
+
     return result, skip_connection
+
 
 def get_default_deconv_block(expansive_inputs, contractive_inputs, n_filters=32):
     """Convolutional upsampling block (vanilla) in Unet
@@ -201,25 +214,25 @@ def get_default_deconv_block(expansive_inputs, contractive_inputs, n_filters=32)
     Returns:
         result [Tensor]: Output tensor
     """
-    x = Conv2DTranspose(n_filters, (3, 3), strides=(2, 2), 
-            padding='same')(expansive_inputs)
-    
+    x = Conv2DTranspose(n_filters, (3, 3), strides=(2, 2),
+                        padding='same')(expansive_inputs)
+
     merged = concatenate([x, contractive_inputs], axis=3)
 
     x = Conv2D(n_filters, 3, padding='same',
-            kernel_initializer='he_normal')(merged)
+               kernel_initializer='he_normal')(merged)
     x = BatchNormalization()(x)
     x = Activation(activation='relu')(x)
 
     result = Conv2D(n_filters, 3, padding='same',
-            activation='relu',
-            kernel_initializer='he_normal')(x)
+                    activation='relu',
+                    kernel_initializer='he_normal')(x)
 
     return result
 
 
 #
-### Inception like UNet block with dilated kernels
+# Inception like UNet block with dilated kernels
 #
 def get_dilated_conv_block(inputs=None, n_filters=32, dropout_prob=0.5, max_pooling=True, alpha=1.67):
     # A multiplyer for the original number of filters (kernels)
@@ -227,21 +240,25 @@ def get_dilated_conv_block(inputs=None, n_filters=32, dropout_prob=0.5, max_pool
 
     # 1v1 for later use
     n_filters_1x1 = int(W * 0.167) + int(W * 0.333) + int(W * 0.5)
-    shortcut = Conv2D(n_filters_1x1, 1, padding='same', kernel_initializer='he_normal')(inputs)
+    shortcut = Conv2D(n_filters_1x1, 1, padding='same',
+                      kernel_initializer='he_normal')(inputs)
     shortcut = BatchNormalization()(shortcut)
-    
+
     # First 3x3 conv
-    conv3x3 = Conv2D(int(W * 0.167), 3, padding='same', kernel_initializer='he_normal')(inputs)
+    conv3x3 = Conv2D(int(W * 0.167), 3, padding='same',
+                     kernel_initializer='he_normal')(inputs)
     conv3x3 = BatchNormalization()(conv3x3)
     conv3x3 = Activation(activation='relu')(conv3x3)
 
     # Second 3x3 conv (emulating 5x5 conv)
-    conv5x5 = Conv2D(int(W * 0.333), 3, padding='same', dilation_rate=2, kernel_initializer='he_normal')(inputs)
+    conv5x5 = Conv2D(int(W * 0.333), 3, padding='same',
+                     dilation_rate=2, kernel_initializer='he_normal')(inputs)
     conv5x5 = BatchNormalization()(conv5x5)
     conv5x5 = Activation(activation='relu')(conv5x5)
 
     # Third 3x3 conv (emulating 7x7 conv)
-    conv7x7 = Conv2D(int(W * 0.5), 3, padding='same', dilation_rate=3, kernel_initializer='he_normal')(inputs)
+    conv7x7 = Conv2D(int(W * 0.5), 3, padding='same',
+                     dilation_rate=3, kernel_initializer='he_normal')(inputs)
     conv7x7 = BatchNormalization()(conv7x7)
     conv7x7 = Activation(activation='relu')(conv7x7)
 
@@ -249,10 +266,10 @@ def get_dilated_conv_block(inputs=None, n_filters=32, dropout_prob=0.5, max_pool
     concat = concatenate([conv3x3, conv5x5, conv7x7], axis=3)
     concat = BatchNormalization()(concat)
 
-    # Merge the 1x1 and quasi-inception layer, and apply an activation 
+    # Merge the 1x1 and quasi-inception layer, and apply an activation
     x = add([shortcut, concat])
     x = Activation('relu')(x)
-    
+
     if dropout_prob > 0.0:
         x = Dropout(rate=dropout_prob)(x)
 
@@ -260,13 +277,15 @@ def get_dilated_conv_block(inputs=None, n_filters=32, dropout_prob=0.5, max_pool
         out = MaxPool2D(pool_size=(2, 2))(x)
     else:
         out = x
-    
+
     skip_connection = x
-    
+
     return out, skip_connection
 
+
 def get_dilated_deconv_block(expansive_inputs, contractive_inputs, n_filters=32, alpha=1.67):
-    x = Conv2DTranspose(n_filters, (3, 3), strides=(2, 2), padding='same')(expansive_inputs)
+    x = Conv2DTranspose(n_filters, (3, 3), strides=(2, 2),
+                        padding='same')(expansive_inputs)
     merged = concatenate([x, contractive_inputs], axis=3)
 
     # A multiplyer for the original number of filters (kernels)
@@ -274,21 +293,25 @@ def get_dilated_deconv_block(expansive_inputs, contractive_inputs, n_filters=32,
 
     # 1v1 for later use
     n_filters_1x1 = int(W * 0.167) + int(W * 0.333) + int(W * 0.5)
-    shortcut = Conv2D(n_filters_1x1, 1, padding='same', kernel_initializer='he_normal')(merged)
+    shortcut = Conv2D(n_filters_1x1, 1, padding='same',
+                      kernel_initializer='he_normal')(merged)
     shortcut = BatchNormalization()(shortcut)
-    
+
     # First 3x3 conv
-    conv3x3 = Conv2D(int(W * 0.167), 3, padding='same', kernel_initializer='he_normal')(merged)
+    conv3x3 = Conv2D(int(W * 0.167), 3, padding='same',
+                     kernel_initializer='he_normal')(merged)
     conv3x3 = BatchNormalization()(conv3x3)
     conv3x3 = Activation(activation='relu')(conv3x3)
 
     # Second 3x3 conv (emulating 5x5 conv)
-    conv5x5 = Conv2D(int(W * 0.333), 3, padding='same', dilation_rate=2, kernel_initializer='he_normal')(merged)
+    conv5x5 = Conv2D(int(W * 0.333), 3, padding='same',
+                     dilation_rate=2, kernel_initializer='he_normal')(merged)
     conv5x5 = BatchNormalization()(conv5x5)
     conv5x5 = Activation(activation='relu')(conv5x5)
 
     # Third 3x3 conv (emulating 7x7 conv)
-    conv7x7 = Conv2D(int(W * 0.5), 3, padding='same', dilation_rate=3, kernel_initializer='he_normal')(merged)
+    conv7x7 = Conv2D(int(W * 0.5), 3, padding='same',
+                     dilation_rate=3, kernel_initializer='he_normal')(merged)
     conv7x7 = BatchNormalization()(conv7x7)
     conv7x7 = Activation(activation='relu')(conv7x7)
 
@@ -296,7 +319,7 @@ def get_dilated_deconv_block(expansive_inputs, contractive_inputs, n_filters=32,
     concat = concatenate([conv3x3, conv5x5, conv7x7], axis=3)
     concat = BatchNormalization()(concat)
 
-    # Merge the 1x1 and quasi-inception layer, and apply an activation 
+    # Merge the 1x1 and quasi-inception layer, and apply an activation
     x = add([shortcut, concat])
     x = Activation('relu')(x)
     result = BatchNormalization()(x)
@@ -304,7 +327,9 @@ def get_dilated_deconv_block(expansive_inputs, contractive_inputs, n_filters=32,
     return result
 
 #
-### Connection paths
+# Connection paths
+
+
 def __resnet_block(inputs, n_filters):
     """Helper function to create ResNet blocks for skip connections
 
@@ -317,8 +342,9 @@ def __resnet_block(inputs, n_filters):
     """
     shortcut = Conv2D(n_filters, 1, padding='same')(inputs)
     shortcut = BatchNormalization()(shortcut)
-    
-    out = Conv2D(n_filters, 3, padding='same', kernel_initializer='he_normal')(inputs)
+
+    out = Conv2D(n_filters, 3, padding='same',
+                 kernel_initializer='he_normal')(inputs)
     out = BatchNormalization()(out)
     out = Activation(activation='relu')(out)
 
@@ -327,6 +353,7 @@ def __resnet_block(inputs, n_filters):
     result = Activation(activation='relu')(result)
 
     return result
+
 
 def get_unet_connection(inputs=None, n_filters=32, path_type='default'):
     if path_type == 'default':
@@ -339,30 +366,33 @@ def get_unet_connection(inputs=None, n_filters=32, path_type='default'):
         return y
 
 #
-### Wrapper for UNet blocks
+# Wrapper for UNet blocks
 #
+
+
 def get_unet_conv_block(inputs=None, n_filters=32, dropout_prob=0.5, max_pooling=True, block_type='default'):
     if block_type == 'default':
         return get_default_conv_block(
-            inputs=inputs, 
-            n_filters=n_filters, 
-            dropout_prob=dropout_prob, 
+            inputs=inputs,
+            n_filters=n_filters,
+            dropout_prob=dropout_prob,
             max_pooling=max_pooling
         )
     elif block_type == 'multires':
         return get_multires_conv_block(
-            inputs=inputs, 
-            n_filters=n_filters, 
-            dropout_prob=dropout_prob, 
+            inputs=inputs,
+            n_filters=n_filters,
+            dropout_prob=dropout_prob,
             max_pooling=max_pooling
         )
     elif block_type == 'dilated_multires':
         return get_dilated_conv_block(
-            inputs=inputs, 
-            n_filters=n_filters, 
-            dropout_prob=dropout_prob, 
+            inputs=inputs,
+            n_filters=n_filters,
+            dropout_prob=dropout_prob,
             max_pooling=max_pooling
         )
+
 
 def get_unet_deconv_block(expansive_inputs, contractive_inputs, n_filters=32, block_type='default'):
     if block_type == 'default':
@@ -386,11 +416,11 @@ def get_unet_deconv_block(expansive_inputs, contractive_inputs, n_filters=32, bl
 
 
 #
-### UNet model 
+# UNet model
 #
 def get_unet(
-    img_size=512, n_filters=32, lr=5e-5, dropout_prob=0.0, 
-    block_type='default', skip_connection_type='default'):
+        img_size=512, n_filters=32, lr=5e-5, dropout_prob=0.0,
+        block_type='default', skip_connection_type='default'):
     """Creates a UNet and returns the model instance
 
     Args:
@@ -413,53 +443,67 @@ def get_unet(
 
     input_dims = (img_size, img_size, 3)
     inputs = Input(shape=input_dims)
-    
+
     # Encoder
-    eb1 = get_unet_conv_block(inputs, n_filters=nf, dropout_prob=dp, max_pooling=True, block_type=block_type)
-    
+    eb1 = get_unet_conv_block(
+        inputs, n_filters=nf, dropout_prob=dp, max_pooling=True, block_type=block_type)
+
     nf *= 2
     dp += 0.1
 
-    eb2 = get_unet_conv_block(eb1[0], n_filters=nf, dropout_prob=dp, max_pooling=True, block_type=block_type)
-    
+    eb2 = get_unet_conv_block(
+        eb1[0], n_filters=nf, dropout_prob=dp, max_pooling=True, block_type=block_type)
+
     nf *= 2
     dp += 0.1
 
-    eb3 = get_unet_conv_block(eb2[0], n_filters=nf, dropout_prob=dp, max_pooling=True, block_type=block_type)
-    
+    eb3 = get_unet_conv_block(
+        eb2[0], n_filters=nf, dropout_prob=dp, max_pooling=True, block_type=block_type)
+
     nf *= 2
     dp += 0.1
 
-    eb4 = get_unet_conv_block(eb3[0], n_filters=nf, dropout_prob=dp, max_pooling=True, block_type=block_type)
-    
+    eb4 = get_unet_conv_block(
+        eb3[0], n_filters=nf, dropout_prob=dp, max_pooling=True, block_type=block_type)
+
     nf *= 2
     dp += 0.1
-    
-    eb5 = get_unet_conv_block(eb4[0], n_filters=nf, dropout_prob=dp, max_pooling=False, block_type=block_type)
-    
+
+    eb5 = get_unet_conv_block(
+        eb4[0], n_filters=nf, dropout_prob=dp, max_pooling=False, block_type=block_type)
+
     nf /= 2
 
     # Decoder
-    skip_tensor_4 = get_unet_connection(inputs=eb4[1], n_filters=nf, path_type=skip_connection_type)
-    db6 = get_unet_deconv_block(eb5[0], skip_tensor_4, n_filters=nf, block_type=block_type)
-    
+    skip_tensor_4 = get_unet_connection(
+        inputs=eb4[1], n_filters=nf, path_type=skip_connection_type)
+    db6 = get_unet_deconv_block(
+        eb5[0], skip_tensor_4, n_filters=nf, block_type=block_type)
+
     nf /= 2
 
-    skip_tensor_3 = get_unet_connection(inputs=eb3[1], n_filters=nf, path_type=skip_connection_type)
-    db7 = get_unet_deconv_block(db6, skip_tensor_3, n_filters=nf, block_type=block_type)
-    
+    skip_tensor_3 = get_unet_connection(
+        inputs=eb3[1], n_filters=nf, path_type=skip_connection_type)
+    db7 = get_unet_deconv_block(
+        db6, skip_tensor_3, n_filters=nf, block_type=block_type)
+
     nf /= 2
 
-    skip_tensor_2 = get_unet_connection(inputs=eb2[1], n_filters=nf, path_type=skip_connection_type)
-    db8 = get_unet_deconv_block(db7, skip_tensor_2, n_filters=nf, block_type=block_type)
-    
+    skip_tensor_2 = get_unet_connection(
+        inputs=eb2[1], n_filters=nf, path_type=skip_connection_type)
+    db8 = get_unet_deconv_block(
+        db7, skip_tensor_2, n_filters=nf, block_type=block_type)
+
     nf /= 2
 
-    skip_tensor_1 = get_unet_connection(inputs=eb1[1], n_filters=nf, path_type=skip_connection_type)
-    db9 = get_unet_deconv_block(db8, skip_tensor_1, n_filters=nf, block_type=block_type)
-    
+    skip_tensor_1 = get_unet_connection(
+        inputs=eb1[1], n_filters=nf, path_type=skip_connection_type)
+    db9 = get_unet_deconv_block(
+        db8, skip_tensor_1, n_filters=nf, block_type=block_type)
+
     # Output Conv layers and flatten
-    conv_out1 = Conv2D(nf, 3, activation='relu', padding='same', kernel_initializer='he_normal')(db9)
+    conv_out1 = Conv2D(nf, 3, activation='relu', padding='same',
+                       kernel_initializer='he_normal')(db9)
     conv_out2 = Conv2D(1, 1, activation='sigmoid')(conv_out1)
     flattened = Flatten()(conv_out2)
 
@@ -472,13 +516,13 @@ def get_unet(
     )
 
     model.compile(
-        optimizer=Adam(learning_rate=learning_rate_schedule), 
-        loss='binary_crossentropy', 
+        optimizer=Adam(learning_rate=learning_rate_schedule),
+        loss='binary_crossentropy',
         metrics=['accuracy', 'mean_absolute_error', mean_percent_count_err]
     )
     model.summary()
 
-    # Giving the reference of our custom metric at the loading time 
+    # Giving the reference of our custom metric at the loading time
     model_config = model.get_config()
 
     return model

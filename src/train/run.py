@@ -1,3 +1,5 @@
+from azureml.core import Run
+from azureml.core import Workspace, Dataset
 import argparse
 from datetime import datetime
 import os
@@ -8,8 +10,8 @@ from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStoppi
 import utils
 # from unet import get_unet
 import unet
+import training_callbacks
 
-from azureml.core import Workspace, Dataset
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dataset_dir", default="dataset/preprocessed/512_cropped",
@@ -135,13 +137,15 @@ if __name__ == "__main__":
             block_type=_args.unet_block_type,
             skip_connection_type=_args.unet_skip_conn_type
         )
+        run = Run.get_context()
         _model.fit(
             x=training_generator,
             callbacks=[
                 val_error_checkpoint,
                 val_loss_checkpoint,
                 # early_stopping_checkpoint,
-                tensorboard_callback
+                tensorboard_callback,
+                training_callbacks.LogToAzure(run)
             ],
             epochs=_args.epochs,
             validation_data=validation_generator,
