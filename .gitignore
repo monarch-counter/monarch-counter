@@ -129,7 +129,7 @@ dmypy.json
 .pyre/
 
 ## Dataset 
-/Dataset
+/dataset
 
 ## Tensorboard logs 
 /logs
@@ -137,3 +137,6 @@ dmypy.json
 ## Generated outputs
 /src/predict/out
 /src/train/out
+
+## IDE related
+.vscode/*
