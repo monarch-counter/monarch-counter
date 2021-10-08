@@ -1,5 +1,3 @@
-from azureml.core import Run
-from azureml.core import Workspace, Dataset
 import argparse
 from datetime import datetime
 import os
@@ -10,7 +8,6 @@ from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStoppi
 import utils
 # from unet import get_unet
 import unet
-import training_callbacks
 
 
 parser = argparse.ArgumentParser()
@@ -51,27 +48,6 @@ if __name__ == "__main__":
 
     # Create a unique timestamp
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-
-    # Should only run this on azure, otherwise you'll have to debug directory path related errors
-    if _args.azure_dataset != "":
-        print("Starting downloads")
-
-        # RUN TO DOWNLAD DATASETS
-        # azureml-core of version 1.0.72 or higher is required
-        subscription_id = 'd9399c18-82ea-4a59-9209-2c7dbcd73a7a'
-        resource_group = 'train_group'
-        workspace_name = 'train'
-
-        workspace = Workspace(subscription_id, resource_group, workspace_name)
-
-        print(f'Downloading: {_args.azure_dataset}')
-        dataset = Dataset.get_by_name(workspace, name=_args.azure_dataset)
-        dataset.download(target_path='./downloads/' +
-                         _args.azure_dataset, overwrite=False)
-
-        print("Lisiting directory contents")
-        print(os.listdir('./'))
-        print(os.listdir('./downloads'))
 
     # Log this run of the experiment
     new_experiment = utils.log_experiment(ts, _args)
