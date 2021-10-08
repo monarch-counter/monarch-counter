@@ -1,64 +1,96 @@
+from azureml.core import Run
+from azureml.core import Workspace, Dataset
 import argparse
 from datetime import datetime
 import os
 from os import path
 
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
-from .utils import train_test_val_split, log_experiment, DataGenerator
-from .unet import get_unet
+# from utils import train_test_val_split, log_experiment, DataGenerator
+import utils
+# from unet import get_unet
+import unet
+import training_callbacks
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dataset_dir", default="dataset/preprocessed/512_cropped",
-    help="Relative path to directory that contains the preprocessed dataset. \
+                    help="Relative path to directory that contains the preprocessed dataset. \
         Defaults to dataset/preprocessed/512_cropped")
 parser.add_argument("--image_size", default="512", type=int,
-    help="Image size (height and width) of input and output images in terms of pixel counts. \
+                    help="Image size (height and width) of input and output images in terms of pixel counts. \
         E.g. if set to 128, model expects input and output images of 128x128 pixels. Defaults to 512.")
 
 parser.add_argument("--batch_size", default="8", type=int,
-    help="Batch size for training")
+                    help="Batch size for training")
 parser.add_argument("--epochs", default="50", type=int,
-    help="Number of epochs for training")
+                    help="Number of epochs for training")
 parser.add_argument("--lr", default="5e-5", type=float,
-    help="Learning rate of the optimizer")
+                    help="Learning rate of the optimizer")
 parser.add_argument("--dropout_rate", default="0.0", type=float,
-    help="Dropout rate for the Conv blocks. Starts off with this rate and keeps on increasing for the deeper blocks.")
+                    help="Dropout rate for the Conv blocks. Starts off with this rate and keeps on increasing for the deeper blocks.")
 
 parser.add_argument("--n_filters", default="16", type=int,
-    help="No of filters (kernels) the model starts with in the first Conv layer")
+                    help="No of filters (kernels) the model starts with in the first Conv layer")
 parser.add_argument("--unet_block_type", default="default",
-    help="Type of encoder and decoder blocks in the UNet. Can be 'default', 'multires' or 'dilated_multires'.")
+                    help="Type of encoder and decoder blocks in the UNet. Can be 'default', 'multires' or 'dilated_multires'.")
 parser.add_argument("--unet_skip_conn_type", default="default",
-    help="Type of residual path used in the UNet. Can be 'default' or 'resnet'.")
+                    help="Type of residual path used in the UNet. Can be 'default' or 'resnet'.")
+
+parser.add_argument("--azure_dataset", default="",
+                    help="Azure datasets you want to download.")
+
 
 def pretty_print_args(_args):
     print(' '.join(f'{k}={v}\n' for k, v in vars(_args).items()))
 
 
 if __name__ == "__main__":
-    _args = parser.parse_args() 
- 
+    print("Starting main")
+    _args = parser.parse_args()
+
     # Create a unique timestamp
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
 
+    # Should only run this on azure, otherwise you'll have to debug directory path related errors
+    if _args.azure_dataset != "":
+        print("Starting downloads")
+
+        # RUN TO DOWNLAD DATASETS
+        # azureml-core of version 1.0.72 or higher is required
+        subscription_id = 'd9399c18-82ea-4a59-9209-2c7dbcd73a7a'
+        resource_group = 'train_group'
+        workspace_name = 'train'
+
+        workspace = Workspace(subscription_id, resource_group, workspace_name)
+
+        print(f'Downloading: {_args.azure_dataset}')
+        dataset = Dataset.get_by_name(workspace, name=_args.azure_dataset)
+        dataset.download(target_path='./downloads/' +
+                         _args.azure_dataset, overwrite=False)
+
+        print("Lisiting directory contents")
+        print(os.listdir('./'))
+        print(os.listdir('./downloads'))
+
     # Log this run of the experiment
-    new_experiment = log_experiment(ts, _args)
+    new_experiment = utils.log_experiment(ts, _args)
 
     if new_experiment:
         print("New experiment with params -")
         pretty_print_args(_args)
 
-        # Split the data 
-        train_test_val_split(timestamp=ts, dataset_dir=_args.dataset_dir)
+        # Split the data
+        utils.train_test_val_split(timestamp=ts, dataset_dir=_args.dataset_dir)
 
         # Create data generator instances to pass data to the model
-        training_generator = DataGenerator(
+        training_generator = utils.DataGenerator(
             img_size=_args.image_size,
             x_images_path=path.join(os.getcwd(), _args.dataset_dir, 'train_x'),
             y_images_path=path.join(os.getcwd(), _args.dataset_dir, 'train_y'),
             batch_size=_args.batch_size
         )
-        validation_generator = DataGenerator(
+        validation_generator = utils.DataGenerator(
             img_size=_args.image_size,
             x_images_path=path.join(os.getcwd(), _args.dataset_dir, 'val_x'),
             y_images_path=path.join(os.getcwd(), _args.dataset_dir, 'val_y'),
@@ -67,14 +99,16 @@ if __name__ == "__main__":
 
         # Create checkpoints to save the best performing models
         val_error_checkpoint = ModelCheckpoint(
-            filepath=path.join(os.getcwd(), 'src', 'train', 'out', ts + "__least_val_error.hdf5"),
+            filepath=path.join(os.getcwd(), 'src', 'train',
+                               'out', ts + "__least_val_error.hdf5"),
             monitor='val_mean_percent_count_err',
             save_best_only=True,
             mode='min'
         )
 
         val_loss_checkpoint = ModelCheckpoint(
-            filepath=path.join(os.getcwd(), 'src', 'train', 'out', ts + "__least_val_loss.hdf5"),
+            filepath=path.join(os.getcwd(), 'src', 'train',
+                               'out', ts + "__least_val_loss.hdf5"),
             monitor='val_loss',
             save_best_only=True,
             mode='min'
@@ -87,7 +121,7 @@ if __name__ == "__main__":
             restore_best_weights=True
         )
 
-        # Setup tensorboard 
+        # Setup tensorboard
         log_dir = "logs/fit/" + ts
         tensorboard_callback = TensorBoard(
             log_dir=log_dir,
@@ -96,20 +130,22 @@ if __name__ == "__main__":
         )
 
         # Create a model instance and train
-        _model = get_unet(
-            n_filters=_args.n_filters, 
-            lr=_args.lr, 
+        _model = unet.get_unet(
+            n_filters=_args.n_filters,
+            lr=_args.lr,
             dropout_prob=_args.dropout_rate,
             block_type=_args.unet_block_type,
             skip_connection_type=_args.unet_skip_conn_type
         )
+        run = Run.get_context()
         _model.fit(
             x=training_generator,
             callbacks=[
                 val_error_checkpoint,
                 val_loss_checkpoint,
-                # early_stopping_checkpoint, 
-                tensorboard_callback
+                # early_stopping_checkpoint,
+                tensorboard_callback,
+                training_callbacks.LogToAzure(run)
             ],
             epochs=_args.epochs,
             validation_data=validation_generator,

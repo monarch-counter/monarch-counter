@@ -50,3 +50,38 @@ python src/preproc/image_process.py --algo "compress" --images_path "dataset/pre
 # For compressing the output images
 python src/preproc/image_process.py --algo "compress" --images_path "dataset/preprocessed/1024_cropped/density" --dest "dataset/preprocessed/512_compressed/density" --compression_factor 2 --image_size 1024
 ```
+
+# Deployment
+## Connect VSCode <> Azure
+1. Download and install `Azure CLI`
+2. Install the `Azure Machine Learning` extension in VsCode
+3. In the lower blue toolbar, select `Set default Azure ML ..`
+4. In the pop up, select `AI for Good` > `train`
+5. Finally, the blue toolbar should show: `Azure ML Workspace: train  Azure: <you azure account email>`
+
+## Start Compute Instance
+1. Ensure your VsCode is connected to Azure i.e. the lower blue VsCode toolbar should show: `Azure ML Workspace: train  Azure: <you azure account email>`
+2. Open `compute_instance.yml`
+ - [For a different gpu size](https://docs.microsoft.com/en-us/azure/virtual-machines/sizes-gpu)
+ - Note: If there is an error message about exceeding quota limits, that means we'll have to talk to 
+3. Right click file in editor window > `Azure ML: Create Resource`
+
+## Delete Compute Instance
+1. [Delete from UI](https://ml.azure.com/compute/list/instances?wsid=/subscriptions/d9399c18-82ea-4a59-9209-2c7dbcd73a7a/resourcegroups/train_group/workspaces/train&tid=ba5a7f39-e3be-4ab3-b450-67fa80faecad)
+
+## Run Training Job
+1. Ensure your VsCode is connected to Azure i.e. the lower blue VsCode toolbar should show: `Azure ML Workspace: train  Azure: <you azure account email>`
+2. Open `train_counter_job.yml`
+3. Right click file in editor window > `Azure ML: Create Resource`
+4. Eventually, you'll see the following in the job's logs in the terminal. Follow the instructions to give to the job to download the dataset
+    ```
+    To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code ANZB7FLHW to authenticate.
+    2021/10/03 16:40:06 Not exporting to RunHistory as the exporter is either stopped or there is no data.
+    Stopped: false
+    OriginalData: 1
+    FilteredData: 0.
+    ```
+5. Once the data finishes downloading, the training will run as expected, and you will continue seeing the logs in the terminal
+
+## Connect Git to Azure Workspace
+[Follow these directions](https://docs.microsoft.com/en-us/azure/machine-learning/concept-train-model-git-integration)
