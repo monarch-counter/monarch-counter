@@ -81,7 +81,7 @@ if __name__ == "__main__":
         pretty_print_args(_args)
 
         # Split the data
-        utils.train_test_val_split(timestamp=ts, dataset_dir=_args.dataset_dir)
+        # utils.train_test_val_split(timestamp=ts, dataset_dir=_args.dataset_dir)
 
         # Create data generator instances to pass data to the model
         training_generator = utils.DataGenerator(
