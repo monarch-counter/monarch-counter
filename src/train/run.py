@@ -73,88 +73,78 @@ if __name__ == "__main__":
         print(os.listdir('./'))
         print(os.listdir('./downloads'))
 
-    # Log this run of the experiment
-    new_experiment = utils.log_experiment(ts, _args)
+    print("New experiment with params -")
+    pretty_print_args(_args)
 
-    if new_experiment:
-        print("New experiment with params -")
-        pretty_print_args(_args)
+    # Create data generator instances to pass data to the model
+    training_generator = utils.DataGenerator(
+        img_size=_args.image_size,
+        x_images_path=path.join(os.getcwd(), _args.dataset_dir, 'train_x'),
+        y_images_path=path.join(os.getcwd(), _args.dataset_dir, 'train_y'),
+        batch_size=_args.batch_size
+    )
+    validation_generator = utils.DataGenerator(
+        img_size=_args.image_size,
+        x_images_path=path.join(os.getcwd(), _args.dataset_dir, 'val_x'),
+        y_images_path=path.join(os.getcwd(), _args.dataset_dir, 'val_y'),
+        batch_size=_args.batch_size
+    )
 
-        # Split the data
-        # utils.train_test_val_split(timestamp=ts, dataset_dir=_args.dataset_dir)
+    # Create checkpoints to save the best performing models
+    val_error_checkpoint = ModelCheckpoint(
+        filepath=path.join(os.getcwd(), 'src', 'train',
+                            'out', ts + "__least_val_error.hdf5"),
+        monitor='val_mean_percent_count_err',
+        save_best_only=True,
+        mode='min'
+    )
 
-        # Create data generator instances to pass data to the model
-        training_generator = utils.DataGenerator(
-            img_size=_args.image_size,
-            x_images_path=path.join(os.getcwd(), _args.dataset_dir, 'train_x'),
-            y_images_path=path.join(os.getcwd(), _args.dataset_dir, 'train_y'),
-            batch_size=_args.batch_size
-        )
-        validation_generator = utils.DataGenerator(
-            img_size=_args.image_size,
-            x_images_path=path.join(os.getcwd(), _args.dataset_dir, 'val_x'),
-            y_images_path=path.join(os.getcwd(), _args.dataset_dir, 'val_y'),
-            batch_size=_args.batch_size
-        )
+    val_loss_checkpoint = ModelCheckpoint(
+        filepath=path.join(os.getcwd(), 'src', 'train',
+                            'out', ts + "__least_val_loss.hdf5"),
+        monitor='val_loss',
+        save_best_only=True,
+        mode='min'
+    )
 
-        # Create checkpoints to save the best performing models
-        val_error_checkpoint = ModelCheckpoint(
-            filepath=path.join(os.getcwd(), 'src', 'train',
-                               'out', ts + "__least_val_error.hdf5"),
-            monitor='val_mean_percent_count_err',
-            save_best_only=True,
-            mode='min'
-        )
+    early_stopping_checkpoint = EarlyStopping(
+        monitor='val_loss',
+        patience=10,
+        mode='min',
+        restore_best_weights=True
+    )
 
-        val_loss_checkpoint = ModelCheckpoint(
-            filepath=path.join(os.getcwd(), 'src', 'train',
-                               'out', ts + "__least_val_loss.hdf5"),
-            monitor='val_loss',
-            save_best_only=True,
-            mode='min'
-        )
+    # Setup tensorboard
+    log_dir = "logs/fit/" + ts
+    tensorboard_callback = TensorBoard(
+        log_dir=log_dir,
+        update_freq=5,
+        histogram_freq=5
+    )
 
-        early_stopping_checkpoint = EarlyStopping(
-            monitor='val_loss',
-            patience=10,
-            mode='min',
-            restore_best_weights=True
-        )
-
-        # Setup tensorboard
-        log_dir = "logs/fit/" + ts
-        tensorboard_callback = TensorBoard(
-            log_dir=log_dir,
-            update_freq=5,
-            histogram_freq=5
-        )
-
-        # Create a model instance and train
-        _model = unet.get_unet(
-            n_filters=_args.n_filters,
-            lr=_args.lr,
-            dropout_prob=_args.dropout_rate,
-            block_type=_args.unet_block_type,
-            skip_connection_type=_args.unet_skip_conn_type
-        )
-        run = Run.get_context()
-        _model.fit(
-            x=training_generator,
-            callbacks=[
-                val_error_checkpoint,
-                val_loss_checkpoint,
-                # early_stopping_checkpoint,
-                tensorboard_callback,
-                training_callbacks.LogToAzure(run)
-            ],
-            epochs=_args.epochs,
-            validation_data=validation_generator,
-            shuffle=True,
-            validation_freq=1,
-            max_queue_size=10,
-            workers=4,
-            use_multiprocessing=True
-        )
-    else:
-        print("Experiment already performed with params -")
-        pretty_print_args(_args)
+    # Create a model instance and train
+    _model = unet.get_unet(
+        n_filters=_args.n_filters,
+        lr=_args.lr,
+        dropout_prob=_args.dropout_rate,
+        block_type=_args.unet_block_type,
+        skip_connection_type=_args.unet_skip_conn_type
+    )
+    run = Run.get_context()
+    _model.fit(
+        x=training_generator,
+        callbacks=[
+            val_error_checkpoint,
+            val_loss_checkpoint,
+            # early_stopping_checkpoint,
+            tensorboard_callback,
+            training_callbacks.LogToAzure(run)
+        ],
+        epochs=_args.epochs,
+        validation_data=validation_generator,
+        shuffle=True,
+        validation_freq=1,
+        max_queue_size=10,
+        workers=4,
+        use_multiprocessing=True
+    )
